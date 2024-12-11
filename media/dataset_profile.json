@@ -1,0 +1,68 @@
+{
+  "shape": [
+    2652,
+    8
+  ],
+  "columns": [
+    "date",
+    "language",
+    "type",
+    "title",
+    "by",
+    "overall",
+    "quality",
+    "repeatability"
+  ],
+  "dtypes": {
+    "date": "object",
+    "language": "object",
+    "type": "object",
+    "title": "object",
+    "by": "object",
+    "overall": "int64",
+    "quality": "int64",
+    "repeatability": "int64"
+  },
+  "missing_values": {
+    "date": 99,
+    "language": 0,
+    "type": 0,
+    "title": 0,
+    "by": 262,
+    "overall": 0,
+    "quality": 0,
+    "repeatability": 0
+  },
+  "descriptive_stats": {
+    "overall": {
+      "count": 2652.0,
+      "mean": 3.0475113122171944,
+      "std": 0.7621797580962717,
+      "min": 1.0,
+      "25%": 3.0,
+      "50%": 3.0,
+      "75%": 3.0,
+      "max": 5.0
+    },
+    "quality": {
+      "count": 2652.0,
+      "mean": 3.2092760180995477,
+      "std": 0.7967426636666686,
+      "min": 1.0,
+      "25%": 3.0,
+      "50%": 3.0,
+      "75%": 4.0,
+      "max": 5.0
+    },
+    "repeatability": {
+      "count": 2652.0,
+      "mean": 1.4947209653092006,
+      "std": 0.598289430580212,
+      "min": 1.0,
+      "25%": 1.0,
+      "50%": 1.0,
+      "75%": 2.0,
+      "max": 3.0
+    }
+  }
+}
