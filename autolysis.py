@@ -5,263 +5,263 @@
 
 import os
 import sys
-import subprocess
 import logging
-from typing import Optional, List, Dict, Any
+import json
+from typing import Dict, Any, List
 
-# Install required packages
-packages = ["numpy", "pandas", "scikit-learn", "chardet", "requests", "seaborn", "matplotlib", "python-dotenv"]
-for package in packages:
-    try:
+# Use more explicit dependency management
+try:
+    import pandas as pd
+    import numpy as np
+    import chardet
+    import requests
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    from sklearn.preprocessing import StandardScaler, MinMaxScaler
+    from sklearn.impute import SimpleImputer
+    from sklearn.decomposition import PCA
+    from sklearn.cluster import KMeans, DBSCAN
+    from sklearn.metrics import silhouette_score
+    from dotenv import load_dotenv
+except ImportError:
+    print("Installing required packages...")
+    import subprocess
+    packages = [
+        "numpy", "pandas", "scikit-learn", "chardet", 
+        "requests", "seaborn", "matplotlib", "python-dotenv"
+    ]
+    for package in packages:
         subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-    except subprocess.CalledProcessError as e:
-        print(f"Failed to install '{package}'. Error: {e}")
+    
+    # Retry imports
+    import pandas as pd
+    import numpy as np
+    import chardet
+    import requests
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    from sklearn.preprocessing import StandardScaler, MinMaxScaler
+    from sklearn.impute import SimpleImputer
+    from sklearn.decomposition import PCA
+    from sklearn.cluster import KMeans, DBSCAN
+    from sklearn.metrics import silhouette_score
+    from dotenv import load_dotenv
 
-import pandas as pd
-import chardet
-import requests
-import seaborn as sns
-import matplotlib.pyplot as plt
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
-from sklearn.impute import SimpleImputer
-from dotenv import load_dotenv
-
-class DataAnalysis:
-    def __init__(self, dataset_path, api_key):
+class AdvancedDataAnalysis:
+    def __init__(self, dataset_path: str, api_key: str):
+        """
+        Initialize the data analysis pipeline with comprehensive setup.
+        
+        Args:
+            dataset_path (str): Path to the input CSV file
+            api_key (str): API key for LLM generation
+        """
         self.dataset_path = dataset_path
         self.api_key = api_key
-        self.df = None
-        self.headers_json = None
-        self.profile = None
-        self.output_dir = os.path.splitext(self.dataset_path)[0]
         
-        # Setup logging
+        # Enhanced logging configuration
         logging.basicConfig(
             level=logging.INFO, 
-            format='%(asctime)s - %(levelname)s: %(message)s'
+            format='%(asctime)s - %(name)s - %(levelname)s: %(message)s',
+            handlers=[
+                logging.FileHandler('data_analysis.log'),
+                logging.StreamHandler(sys.stdout)
+            ]
         )
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(self.__class__.__name__)
         
-        # Ensure output directory exists
-        self.ensure_output_dir()
+        # Dynamic output directory
+        self.output_dir = self._create_output_directory()
+        
+        # Core data structures
+        self.df = None
+        self.processed_data = None
+        self.analysis_results = {}
 
-    def ensure_output_dir(self):
+    def _create_output_directory(self) -> str:
         """
-        Create the output directory for storing analysis results.
+        Create a timestamped output directory for analysis results.
+        
+        Returns:
+            str: Path to the created output directory
+        """
+        base_dir = os.path.splitext(self.dataset_path)[0]
+        timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = f"{base_dir}_{timestamp}"
+        os.makedirs(output_dir, exist_ok=True)
+        self.logger.info(f"Created output directory: {output_dir}")
+        return output_dir
+
+    def load_data(self) -> None:
+        """
+        Robustly load data with encoding detection and basic preprocessing.
         """
         try:
-            os.makedirs(self.output_dir, exist_ok=True)
-            self.logger.info(f"Output directory created: {self.output_dir}")
-        except Exception as e:
-            self.logger.error(f"Error creating output directory: {e}")
-            sys.exit(1)
-
-    def read_data(self):
-        """
-        Read the CSV file with automatic encoding detection.
-        """
-        try:
+            # Detect encoding
             with open(self.dataset_path, 'rb') as file:
                 result = chardet.detect(file.read())
-                encoding = result['encoding']
-
-            self.df = pd.read_csv(self.dataset_path, encoding=encoding)
-            if self.df is None or self.df.empty:
-                self.logger.error("Dataset is empty or could not be loaded.")
-                sys.exit("Dataset is empty or could not be loaded.")
+            
+            # Load with detected encoding
+            self.df = pd.read_csv(self.dataset_path, encoding=result['encoding'])
+            
+            # Basic data validation
+            if self.df.empty:
+                raise ValueError("Empty dataset")
+            
+            self.logger.info(f"Loaded dataset: {self.dataset_path}")
+            self._initial_data_exploration()
+        
         except Exception as e:
-            self.logger.error(f"Error loading dataset: {e}")
-            sys.exit(1)
+            self.logger.error(f"Data loading error: {e}")
+            raise
 
-    def extract_headers(self):
+    def _initial_data_exploration(self) -> None:
         """
-        Extract headers from the dataset and save as a list.
+        Perform initial data exploration and logging.
         """
-        try:
-            if self.df is None:
-                raise ValueError("Data not loaded. Call read_data() first.")
-            
-            # Save headers to a list
-            self.headers_json = self.df.columns.tolist()
-            headers_path = os.path.join(self.output_dir, "headers.txt")
-            
-            with open(headers_path, "w") as f:
-                for header in self.headers_json:
-                    f.write(f"{header}\n")
-            
-            self.logger.info(f"Headers saved to {headers_path}")
-        except Exception as e:
-            self.logger.error(f"Error extracting headers: {e}")
+        # Data overview logging
+        self.logger.info(f"Dataset Shape: {self.df.shape}")
+        self.logger.info("Column Types:")
+        for col, dtype in self.df.dtypes.items():
+            self.logger.info(f"  {col}: {dtype}")
+        
+        # Save initial profile
+        self._save_data_profile()
 
-    def create_profile(self):
+    def _save_data_profile(self) -> None:
         """
-        Create a comprehensive profile of the dataset.
+        Save comprehensive dataset profile.
         """
-        try:
-            if self.df is None:
-                raise ValueError("Data not loaded. Call read_data() first.")
-            
-            # Compute basic statistics
-            profile = {
-                "shape": self.df.shape,
-                "columns": self.df.columns.tolist(),
-                "dtypes": self.df.dtypes.to_dict(),
-                "missing_values": self.df.isnull().sum().to_dict(),
-                "descriptive_stats": self.df.describe().to_dict()
-            }
-            
-            self.profile = profile
-            
-            # Save profile to a text file
-            profile_path = os.path.join(self.output_dir, "dataset_profile.txt")
-            with open(profile_path, "w") as f:
-                for key, value in profile.items():
-                    f.write(f"{key}: {value}\n")
-            
-            self.logger.info(f"Dataset profile saved to {profile_path}")
-        except Exception as e:
-            self.logger.error(f"Error creating dataset profile: {e}")
+        profile = {
+            "shape": self.df.shape,
+            "columns": list(self.df.columns),
+            "dtypes": self.df.dtypes.astype(str).to_dict(),
+            "missing_values": self.df.isnull().sum().to_dict(),
+            "non_null_counts": self.df.count().to_dict(),
+            "descriptive_stats": self.df.describe().to_dict()
+        }
+        
+        profile_path = os.path.join(self.output_dir, "dataset_profile.json")
+        with open(profile_path, 'w') as f:
+            json.dump(profile, f, indent=2, default=str)
 
-    def construct_scatterplot(self):
+    def preprocess_data(self) -> None:
         """
-        Generate a scatter plot of two numeric columns.
+        Advanced data preprocessing with multiple techniques.
         """
-        try:
-            if self.df is None:
-                raise ValueError("Data not loaded. Call read_data() first.")
-            
-            # Select two numeric columns
-            numeric_cols = self.df.select_dtypes(include=['float64', 'int64']).columns
-            
-            if len(numeric_cols) < 2:
-                self.logger.warning("Not enough numeric columns for scatter plot.")
-                return
-            
-            plt.figure(figsize=(10, 6))
-            plt.scatter(self.df[numeric_cols[0]], self.df[numeric_cols[1]], alpha=0.7)
-            plt.title(f"Scatter Plot: {numeric_cols[0]} vs {numeric_cols[1]}")
-            plt.xlabel(numeric_cols[0])
-            plt.ylabel(numeric_cols[1])
-            
-            scatter_path = os.path.join(self.output_dir, "scatter_plot.png")
-            plt.savefig(scatter_path)
-            plt.close()
-            
-            self.logger.info(f"Scatter plot saved to {scatter_path}")
-        except Exception as e:
-            self.logger.error(f"Error generating scatter plot: {e}")
-
-    def generate_correlation_heatmap(self):
-        """
-        Generate a correlation heatmap for numeric columns.
-        """
-        try:
-            if self.df is None:
-                raise ValueError("Data not loaded. Call read_data() first.")
-            
-            # Select numeric columns
-            numeric_df = self.df.select_dtypes(include=['float64', 'int64'])
-            
-            if numeric_df.empty:
-                self.logger.warning("No numeric columns found for correlation heatmap.")
-                return
-            
-            # Compute correlation matrix
-            corr_matrix = numeric_df.corr()
-            
-            plt.figure(figsize=(12, 10))
-            sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0)
-            plt.title("Correlation Heatmap")
-            
-            heatmap_path = os.path.join(self.output_dir, "correlation_heatmap.png")
-            plt.savefig(heatmap_path)
-            plt.close()
-            
-            self.logger.info(f"Correlation heatmap saved to {heatmap_path}")
-        except Exception as e:
-            self.logger.error(f"Error generating correlation heatmap: {e}")
-
-    def generate_cluster_plot(self):
-        """
-        Perform K-means clustering and visualize results.
-        """
-        try:
-            if self.df is None:
-                raise ValueError("Data not loaded. Call read_data() first.")
-            
-            # Select numeric columns
-            numeric_df = self.df.select_dtypes(include=['float64', 'int64'])
-            
-            if numeric_df.empty or numeric_df.shape[1] < 2:
-                self.logger.warning("Not enough numeric columns for clustering.")
-                return
-            
-            # Prepare data for clustering
-            scaler = StandardScaler()
-            imputer = SimpleImputer(strategy='mean')
-            
-            # Impute missing values
-            numeric_data = imputer.fit_transform(numeric_df)
-            scaled_data = scaler.fit_transform(numeric_data)
-            
-            # Perform K-means clustering
-            kmeans = KMeans(n_clusters=3, random_state=42)
-            clusters = kmeans.fit_predict(scaled_data)
-            
-            # Plot clusters
-            plt.figure(figsize=(10, 6))
-            
-            # Use first two columns for visualization
-            scatter = plt.scatter(
-                scaled_data[:, 0], 
-                scaled_data[:, 1], 
-                c=clusters, 
-                cmap='viridis'
-            )
-            
-            plt.title("K-means Clustering")
-            plt.xlabel(numeric_df.columns[0])
-            plt.ylabel(numeric_df.columns[1])
-            plt.colorbar(scatter, label='Cluster')
-            
-            cluster_path = os.path.join(self.output_dir, "cluster_plot.png")
-            plt.savefig(cluster_path)
-            plt.close()
-            
-            self.logger.info(f"Clustering plot saved to {cluster_path}")
-        except Exception as e:
-            self.logger.error(f"Error generating cluster plot: {e}")
-
-    def readme(self):
-        """
-        Generate a comprehensive README with insights and visualizations.
-        """
-        if not os.path.exists(self.output_dir):
-            self.logger.error(f"Directory does not exist: {self.output_dir}")
+        # Select numeric columns
+        numeric_cols = self.df.select_dtypes(include=['float64', 'int64']).columns
+        
+        if len(numeric_cols) < 2:
+            self.logger.warning("Insufficient numeric columns for advanced analysis")
             return
+        
+        # Imputation and scaling
+        imputer = SimpleImputer(strategy='median')
+        scaler = StandardScaler()
+        
+        # Prepare data
+        numeric_data = self.df[numeric_cols]
+        imputed_data = pd.DataFrame(
+            imputer.fit_transform(numeric_data), 
+            columns=numeric_cols
+        )
+        
+        self.processed_data = pd.DataFrame(
+            scaler.fit_transform(imputed_data), 
+            columns=numeric_cols
+        )
+        
+        self.logger.info("Data preprocessed successfully")
 
-        # Prepare visualization paths
-        image_files = [
-            f for f in os.listdir(self.output_dir) 
-            if f.endswith('.png')
-        ]
+    def generate_visualizations(self) -> None:
+        """
+        Generate multiple advanced visualizations.
+        """
+        # Scatter plot matrix
+        plt.figure(figsize=(15, 10))
+        sns.pairplot(self.df.select_dtypes(include=['float64', 'int64']))
+        plt.suptitle("Pairplot of Numeric Variables", y=1.02)
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.output_dir, "pairplot.png"))
+        plt.close()
+        
+        # Correlation heatmap
+        plt.figure(figsize=(12, 10))
+        correlation_matrix = self.df.select_dtypes(include=['float64', 'int64']).corr()
+        sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0)
+        plt.title("Correlation Heatmap")
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.output_dir, "correlation_heatmap.png"))
+        plt.close()
 
-        try:
-            # Prepare comprehensive context for the LLM
-            analysis_context = {
-                "dataset_name": os.path.basename(self.dataset_path),
-                "dataset_profile": {
-                    "shape": self.df.shape,
-                    "columns": self.df.columns.tolist(),
-                    "data_types": self.df.dtypes.apply(str).to_dict(),
-                    "missing_values": self.df.isnull().sum().to_dict(),
-                    "numeric_summary": self.df.describe().to_dict()
-                },
-                "visualizations": image_files
+    def advanced_clustering(self) -> None:
+        """
+        Perform advanced clustering with multiple algorithms.
+        """
+        if self.processed_data is None:
+            self.preprocess_data()
+        
+        # PCA for dimensionality reduction
+        pca = PCA(n_components=2)
+        reduced_data = pca.fit_transform(self.processed_data)
+        
+        # Multiple clustering algorithms
+        clustering_methods = {
+            'KMeans': KMeans(n_clusters=3, random_state=42),
+            'DBSCAN': DBSCAN(eps=0.5, min_samples=5)
+        }
+        
+        results = {}
+        for name, algorithm in clustering_methods.items():
+            if name == 'KMeans':
+                labels = algorithm.fit_predict(self.processed_data)
+                score = silhouette_score(self.processed_data, labels)
+            else:
+                labels = algorithm.fit_predict(self.processed_data)
+                # Handle potential noise points
+                score = silhouette_score(
+                    self.processed_data[labels != -1], 
+                    labels[labels != -1]
+                ) if len(labels[labels != -1]) > 0 else 0
+            
+            results[name] = {
+                'labels': labels,
+                'score': score
             }
+        
+        # Visualization
+        plt.figure(figsize=(15, 6))
+        for i, (name, result) in enumerate(results.items(), 1):
+            plt.subplot(1, 2, i)
+            plt.scatter(reduced_data[:, 0], reduced_data[:, 1], c=result['labels'], cmap='viridis')
+            plt.title(f"{name} Clustering (Score: {result['score']:.2f})")
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.output_dir, "clustering_comparison.png"))
+        plt.close()
 
-            # Generate README content via LLM
+    def generate_narrative_readme(self) -> None:
+        """
+        Generate a comprehensive narrative README using LLM.
+        """
+        analysis_context = {
+            "dataset_name": os.path.basename(self.dataset_path),
+            "dataset_profile": {
+                "shape": self.df.shape,
+                "columns": list(self.df.columns),
+                "data_types": self.df.dtypes.astype(str).to_dict(),
+                "missing_values": self.df.isnull().sum().to_dict(),
+                "numeric_summary": self.df.describe().to_dict()
+            },
+            "visualizations": [
+                "pairplot.png", 
+                "correlation_heatmap.png", 
+                "clustering_comparison.png"
+            ]
+        }
+        
+        try:
             endpoint = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
@@ -273,10 +273,84 @@ class DataAnalysis:
                 "messages": [
                     {
                         "role": "system",
-                        "content": """You are a professional data analyst creating a comprehensive README.md file. 
-                        Your goal is to provide:
-                        1. A clear overview of the dataset
-                        2. Detailed insights from the data analysis
-                        3. Key statistical observations
-                        4. Potential business or research implications
+                        "content": """Create a comprehensive data analysis narrative:
+                        1. Provide a clear, engaging dataset overview
+                        2. Highlight key statistical insights
+                        3. Interpret visualizations meaningfully
+                        4. Suggest potential research or business implications
+                        5. Use professional, academic research writing style
+                        6. Use markdown formatting
+                        7. Be concise yet comprehensive"""
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(analysis_context, indent=2)
+                    }
+                ]
+            }
+            
+            response = requests.post(endpoint, headers=headers, json=payload)
+            response.raise_for_status()
+            
+            readme_content = response.json()['choices'][0]['message']['content']
+            
+            # Comprehensive README with visualizations
+            full_readme = f"# Data Analysis Report: {os.path.basename(self.dataset_path)}\n\n"
+            full_readme += readme_content + "\n\n"
+            
+            # Add visualization references
+            full_readme += "## Visualizations\n\n"
+            for viz in analysis_context["visualizations"]:
+                full_readme += f"### {os.path.splitext(viz)[0]}\n"
+                full_readme += f"![{viz}]({viz})\n\n"
+            
+            # Write README
+            readme_path = os.path.join(self.output_dir, "README.md")
+            with open(readme_path, "w", encoding="utf-8") as f:
+                f.write(full_readme)
+            
+            self.logger.info(f"Narrative README generated: {readme_path}")
+        
+        except Exception as e:
+            self.logger.error(f"README generation failed: {e}")
+            self._fallback_readme()
 
+    def _fallback_readme(self):
+        """
+        Generate a basic README if LLM generation fails.
+        """
+        readme_content = f"# Data Analysis Report: {os.path.basename(self.dataset_path)}\n\n"
+        readme_content += "## Dataset Overview\n"
+        readme_content += f"- Total Rows: {self.df.shape[0]}\n"
+        readme_content += f"- Total Columns: {self.df.shape[1]}\n\n"
+        
+        readme_path = os.path.join(self.output_dir, "README.md")
+        with open(readme_path, "w", encoding="utf-8") as f:
+            f.write(readme_content)
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python script.py <dataset.csv>")
+        sys.exit(1)
+
+    dataset_file = sys.argv[1]
+
+    try:
+        load_dotenv()
+        api_key = os.environ.get("AIPROXY_TOKEN")
+        if not api_key:
+            raise ValueError("AIPROXY_TOKEN environment variable not set")
+
+        analysis = AdvancedDataAnalysis(dataset_file, api_key)
+        analysis.load_data()
+        analysis.preprocess_data()
+        analysis.generate_visualizations()
+        analysis.advanced_clustering()
+        analysis.generate_narrative_readme()
+
+    except Exception as e:
+        logging.error(f"Analysis failed: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
