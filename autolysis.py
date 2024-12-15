@@ -1,346 +1,363 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["numpy", "pandas", "scikit-learn", "chardet", "requests", "seaborn", "matplotlib", "python-dotenv"]
+# dependencies = [ "pandas","numpy","matplotlib","seaborn","requests","Pillow","tk"]
 # ///
 
 import os
 import sys
 import json
-import logging
-import subprocess
-from typing import Dict, Any, List, Optional
-
-# Automated dependency management
-REQUIRED_PACKAGES = [
-    "numpy", "pandas", "scikit-learn", "chardet", 
-    "requests", "seaborn", "matplotlib", "python-dotenv"
-]
-
-def install_dependencies(packages):
-    """
-    Install required Python packages safely.
-    
-    Args:
-        packages (List[str]): List of package names to install
-    """
-    for package in packages:
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-        except subprocess.CalledProcessError as e:
-            logging.error(f"Failed to install '{package}'. Error: {e}")
-            sys.exit(1)
-
-# Install dependencies before importing
-install_dependencies(REQUIRED_PACKAGES)
+import warnings
+import base64
+import requests
 
 import pandas as pd
 import numpy as np
-import chardet
-import requests
+import matplotlib
 import seaborn as sns
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans, DBSCAN
-from sklearn.impute import SimpleImputer
-from sklearn.feature_selection import mutual_info_classif
-from dotenv import load_dotenv
+from PIL import Image
 
-class AdvancedDataAnalyzer:
-    """
-    A comprehensive data analysis framework with advanced analytical, 
-    visualization, and narrative generation capabilities.
-    """
-    
-    def __init__(self, 
-                 dataset_path: str, 
-                 api_key: str, 
-                 log_level: int = logging.INFO):
+# Suppress warnings globally
+warnings.filterwarnings("ignore")
+matplotlib.use('Agg')
+
+class DataAnalysisConfig:
+    """Configuration class for data analysis settings."""
+    API_TOKEN = os.getenv("DATA_ANALYSIS_TOKEN")
+    if API_TOKEN is None:
+        print("Error: Authentication token is required.")
+        sys.exit(1)
+
+    API_ENDPOINT = "http://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
+    REQUEST_HEADERS = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {API_TOKEN}"
+    }
+    LANGUAGE_MODEL = "gpt-4o-mini"
+
+class DataAnalyzer:
+    """Main class to handle data analysis workflow."""
+
+    @staticmethod
+    def clean_dataset(dataframe):
         """
-        Initialize the data analysis framework.
+        Perform basic data cleaning.
         
         Args:
-            dataset_path (str): Path to the input dataset
-            api_key (str): API key for LLM services
-            log_level (int): Logging verbosity level
-        """
-        self.dataset_path = dataset_path
-        self.api_key = api_key
-        self.df = None
-        self.analysis_results = {}
-        
-        # Advanced logging configuration
-        logging.basicConfig(
-            level=log_level,
-            format='%(asctime)s | %(levelname)8s | %(message)s',
-            handlers=[
-                logging.StreamHandler(sys.stdout),
-                logging.FileHandler('data_analysis.log')
-            ]
-        )
-        self.logger = logging.getLogger(self.__class__.__name__)
-        
-        # Output management
-        self.output_dir = self._create_output_directory()
-    
-    def _create_output_directory(self) -> str:
-        """
-        Create a structured output directory for analysis artifacts.
+            dataframe (pd.DataFrame): Input dataframe
         
         Returns:
-            str: Path to the created output directory
+            pd.DataFrame: Cleaned dataframe
         """
-        base_name = os.path.splitext(os.path.basename(self.dataset_path))[0]
-        output_path = os.path.join('analysis_outputs', base_name)
-        os.makedirs(output_path, exist_ok=True)
-        return output_path
-    
-    def load_data(self) -> pd.DataFrame:
+        cleaned_df = dataframe.drop_duplicates()
+        cleaned_df = cleaned_df.dropna(how='all')
+        return cleaned_df
+
+    @staticmethod
+    def analyze_numeric_columns(numeric_columns):
         """
-        Robustly load data with encoding detection and preprocessing.
+        Generate comprehensive summary for numeric columns.
+        
+        Args:
+            numeric_columns (pd.DataFrame): Numeric columns of the dataset
         
         Returns:
-            pd.DataFrame: Processed DataFrame
+            pd.DataFrame: Detailed numeric column analysis
         """
-        try:
-            # Detect encoding
-            with open(self.dataset_path, 'rb') as file:
-                raw_data = file.read()
-                encoding = chardet.detect(raw_data)['encoding']
-            
-            # Load with detected encoding
-            self.df = pd.read_csv(self.dataset_path, encoding=encoding)
-            
-            # Basic preprocessing
-            self.df.dropna(how='all', inplace=True)  # Drop entirely empty rows
-            self.df.reset_index(drop=True, inplace=True)
-            
-            self.logger.info(f"Loaded dataset: {self.df.shape}")
-            return self.df
-        
-        except Exception as e:
-            self.logger.error(f"Data loading error: {e}")
-            raise
-    
-    def advanced_preprocessing(self):
+        if numeric_columns.empty:
+            return None
+
+        numeric_analysis = numeric_columns.describe().transpose()
+        numeric_analysis['missing_percentage'] = numeric_columns.isnull().mean() * 100
+        numeric_analysis['unique_values'] = numeric_columns.nunique()
+        numeric_analysis['skewness'] = numeric_columns.skew()
+        numeric_analysis['kurtosis'] = numeric_columns.kurtosis()
+
+        # Detect potential outliers
+        q1 = numeric_columns.quantile(0.25)
+        q3 = numeric_columns.quantile(0.75)
+        iqr = q3 - q1
+        outlier_flags = ((numeric_columns < (q1 - 1.5 * iqr)) | (numeric_columns > (q3 + 1.5 * iqr))).sum()
+        numeric_analysis['outliers'] = outlier_flags
+
+        return numeric_analysis
+
+    @staticmethod
+    def analyze_categorical_columns(categorical_columns):
         """
-        Advanced data preprocessing with multiple techniques.
-        """
-        # Imputation strategies
-        numeric_cols = self.df.select_dtypes(include=['number']).columns
-        categorical_cols = self.df.select_dtypes(include=['object']).columns
+        Generate comprehensive summary for categorical columns.
         
-        # Numeric imputation
-        numeric_imputer = SimpleImputer(strategy='median')
-        self.df[numeric_cols] = numeric_imputer.fit_transform(self.df[numeric_cols])
-        
-        # Scale numeric features
-        scaler = StandardScaler()
-        self.df[numeric_cols] = scaler.fit_transform(self.df[numeric_cols])
-        
-        return self
-    
-    def feature_importance(self):
-        """
-        Calculate feature importance using mutual information.
+        Args:
+            categorical_columns (pd.DataFrame): Categorical columns of the dataset
         
         Returns:
-            Dict: Feature importance scores
+            pd.DataFrame: Detailed categorical column analysis
         """
-        numeric_cols = self.df.select_dtypes(include=['number']).columns
-        
-        # Placeholder for target - in real-world, this would be specified
-        target_proxy = self.df[numeric_cols].mean(axis=1)
-        
-        importances = mutual_info_classif(
-            self.df[numeric_cols], 
-            target_proxy
-        )
-        
-        importance_dict = dict(zip(numeric_cols, importances))
-        self.analysis_results['feature_importances'] = importance_dict
-        
-        return importance_dict
-    
-    def generate_visualizations(self):
+        if categorical_columns.empty:
+            return None
+
+        categorical_analysis = categorical_columns.describe().transpose()
+        categorical_analysis['missing_percentage'] = categorical_columns.isnull().mean() * 100
+        categorical_analysis['unique_values'] = categorical_columns.nunique()
+
+        # Detect categorical imbalance
+        imbalance_flags = categorical_columns.apply(lambda col: col.value_counts(normalize=True).iloc[0] > 0.8)
+        categorical_analysis['imbalance'] = imbalance_flags
+
+        return categorical_analysis
+
+    @staticmethod
+    def generate_dataset_summary(dataframe):
         """
-        Create a comprehensive set of visualizations with advanced styling.
-        """
-        plt.style.use('seaborn')
+        Generate comprehensive dataset summary.
         
-        # Correlation Heatmap
-        plt.figure(figsize=(12, 10))
-        corr_matrix = self.df.corr()
-        sns.heatmap(
-            corr_matrix, 
-            annot=True, 
-            cmap='coolwarm', 
-            linewidths=0.5,
-            fmt=".2f",
-            square=True,
-            cbar_kws={"shrink": .8}
-        )
-        plt.title('Feature Correlation Matrix', fontsize=15)
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.output_dir, 'correlation_heatmap.png'))
-        plt.close()
-        
-        # PCA Visualization
-        pca = PCA(n_components=2)
-        pca_result = pca.fit_transform(self.df.select_dtypes(include=['number']))
-        
-        plt.figure(figsize=(10, 8))
-        plt.scatter(
-            pca_result[:, 0], 
-            pca_result[:, 1], 
-            alpha=0.7,
-            c=pca_result[:, 0],  # Color by first principal component
-            cmap='viridis'
-        )
-        plt.title('PCA Visualization', fontsize=15)
-        plt.xlabel('First Principal Component')
-        plt.ylabel('Second Principal Component')
-        plt.colorbar(label='PC1 Value')
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.output_dir, 'pca_visualization.png'))
-        plt.close()
-        
-        return self
-    
-    def generate_narrative_prompt(self) -> Dict[str, Any]:
-        """
-        Create a structured, context-rich prompt for narrative generation.
+        Args:
+            dataframe (pd.DataFrame): Input dataframe
         
         Returns:
-            Dict: Comprehensive data context for LLM
+            dict: Detailed dataset summary
         """
-        narrative_context = {
-            "dataset_metadata": {
-                "name": os.path.basename(self.dataset_path),
-                "rows": self.df.shape[0],
-                "columns": self.df.shape[1],
-                "column_types": {col: str(dtype) for col, dtype in self.df.dtypes.items()}
-            },
-            "statistical_summary": {
-                "numeric_summary": self.df.describe().to_dict(),
-                "feature_importances": self.analysis_results.get('feature_importances', {})
-            },
-            "key_observations": {
-                "top_correlated_features": dict(sorted(
-                    {k: v for k, v in self.df.corr().unstack().items() 
-                     if abs(v) > 0.5 and k != v}, 
-                    key=lambda x: abs(x[1]), 
-                    reverse=True
-                )[:5])
+        cleaned_df = DataAnalyzer.clean_dataset(dataframe)
+        summary = {}
+
+        # Numeric data summary
+        numeric_columns = cleaned_df.select_dtypes(exclude='object')
+        if not numeric_columns.empty:
+            summary['numeric'] = DataAnalyzer.analyze_numeric_columns(numeric_columns)
+
+        # Categorical data summary
+        categorical_columns = cleaned_df.select_dtypes(include='object')
+        if not categorical_columns.empty:
+            summary['categorical'] = DataAnalyzer.analyze_categorical_columns(categorical_columns)
+
+        # Correlation matrix for numeric columns
+        if numeric_columns.shape[1] > 1:
+            correlation_matrix = numeric_columns.corr()
+            high_corr_cols = correlation_matrix.columns[correlation_matrix.abs().gt(0.9).any()]
+            correlation_matrix = correlation_matrix[high_corr_cols].loc[high_corr_cols]
+            summary['correlation'] = correlation_matrix
+
+        # High missing value features
+        high_missing = cleaned_df.isnull().mean() * 100
+        high_missing_features = high_missing[high_missing > 50].sort_values(ascending=False)
+        if not high_missing_features.empty:
+            summary['high_missing'] = high_missing_features
+
+        return summary
+
+    @staticmethod
+    def request_column_analysis(dataset_summary):
+        """
+        Request LLM to suggest columns for analysis.
+        
+        Args:
+            dataset_summary (dict): Comprehensive dataset summary
+        
+        Returns:
+            dict: Suggested columns for visualization
+        """
+        analysis_functions = [{
+            "name": "suggest_analysis_columns",
+            "description": "Recommend columns for histogram, bar chart, and pairplot",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "histogram": {"type": "string", "description": "Column for histogram"},
+                    "barchart": {"type": "string", "description": "Column for bar chart"},
+                    "pairplot1": {"type": "string", "description": "First column for pairplot"},
+                    "pairplot2": {"type": "string", "description": "Second column for pairplot"}
+                },
+                "required": ["histogram", "barchart", "pairplot1", "pairplot2"]
             }
+        }]
+
+        prompt = f'''Suggest columns for analysis based on the dataset summary.
+                     \nSummary: {dataset_summary}'''
+
+        request_payload = {
+            "model": DataAnalysisConfig.LANGUAGE_MODEL,
+            "functions": analysis_functions,
+            "function_call": {"name": "suggest_analysis_columns"},
+            "messages": [{"role": "user", "content": prompt}]
         }
-        
-        return narrative_context
-    
-    def generate_llm_narrative(self, context: Dict[str, Any]) -> str:
+
+        response = requests.post(
+            DataAnalysisConfig.API_ENDPOINT, 
+            headers=DataAnalysisConfig.REQUEST_HEADERS, 
+            json=request_payload
+        )
+        result = response.json()
+        return json.loads(result["choices"][0]["message"]["function_call"]["arguments"])
+
+    @staticmethod
+    def create_visualizations(dataframe, selected_columns, output_dir):
         """
-        Generate a narrative using an LLM with efficient token usage.
+        Generate and save various data visualizations.
         
         Args:
-            context (Dict): Prepared data context
+            dataframe (pd.DataFrame): Input dataframe
+            selected_columns (dict): Columns for visualization
+            output_dir (str): Directory to save visualizations
+        """
+        histogram_column = selected_columns["histogram"]
+        barchart_column = selected_columns["barchart"]
+        pairplot_columns = (selected_columns["pairplot1"], selected_columns["pairplot2"])
+
+        visualization_specs = [
+            {
+                'type': 'histogram',
+                'column': histogram_column,
+                'title': f'Distribution of {histogram_column}',
+                'x_label': histogram_column,
+                'y_label': 'Frequency'
+            },
+            {
+                'type': 'bar',
+                'column': barchart_column,
+                'title': f'Top Categories of {barchart_column}',
+                'x_label': barchart_column,
+                'y_label': 'Counts'
+            },
+            {
+                'type': 'scatter',
+                'columns': pairplot_columns,
+                'title': f'Scatterplot of {pairplot_columns[0]} vs {pairplot_columns[1]}',
+                'x_label': pairplot_columns[0],
+                'y_label': pairplot_columns[1]
+            }
+        ]
+
+        for viz in visualization_specs:
+            plt.figure(figsize=(8, 6))
+            
+            if viz['type'] == 'histogram':
+                dataframe[viz['column']].dropna().hist(bins=30, color='skyblue', edgecolor='black')
+            
+            elif viz['type'] == 'bar':
+                value_counts = dataframe[viz['column']].value_counts()
+                top_values = value_counts[:10] if len(value_counts) > 10 else value_counts
+                top_values.plot(kind='bar', color='skyblue', edgecolor='black')
+            
+            elif viz['type'] == 'scatter':
+                plt.scatter(
+                    dataframe[viz['columns'][0]], 
+                    dataframe[viz['columns'][1]], 
+                    color='skyblue', 
+                    edgecolor='black', 
+                    alpha=0.7
+                )
+
+            plt.title(viz['title'])
+            plt.xlabel(viz['x_label'])
+            plt.ylabel(viz['y_label'])
+            plt.legend(title="Legend", loc="upper right")
+            plt.tight_layout()
+            
+            output_filename = f"{viz['x_label'].replace(' ', '_')}_{viz['type']}.png"
+            plt.savefig(os.path.join(output_dir, output_filename))
+            plt.close()
+
+    @staticmethod
+    def generate_readme(dataset_summary, visualization_paths):
+        """
+        Generate README using LLM.
+        
+        Args:
+            dataset_summary (dict): Comprehensive dataset summary
+            visualization_paths (list): Paths to generated visualizations
         
         Returns:
-            str: Generated narrative in Markdown
+            str: Generated README content
         """
-        try:
-            endpoint = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
+        def encode_image(image_path):
+            with open(image_path, "rb") as image_file:
+                return base64.b64encode(image_file.read()).decode('utf-8')
+
+        encoded_images = [f"data:image/jpeg;base64,{encode_image(path)}" for path in visualization_paths]
+        image_filenames = [os.path.basename(f) for f in visualization_paths]
+
+        readme_function = [{
+            "name": "generate_readme",
+            "description": "Write a comprehensive dataset analysis report",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Analysis report"}
+                },
+                "required": ["text"]
             }
-            
-            payload = {
-                "model": "gpt-4o-mini",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": """You are a data storyteller. Create a compelling, 
-                        structured narrative that:
-                        1. Introduces the dataset's context
-                        2. Highlights key statistical insights
-                        3. Explains significant patterns and correlations
-                        4. Provides actionable recommendations
-                        5. Uses clear, engaging Markdown formatting"""
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(context, indent=2)
-                    }
-                ],
-                "max_tokens": 1000  # Efficient token management
-            }
-            
-            response = requests.post(endpoint, headers=headers, json=payload)
-            response.raise_for_status()
-            
-            return response.json()['choices'][0]['message']['content']
-        
-        except Exception as e:
-            self.logger.error(f"Narrative generation failed: {e}")
-            return "## Data Story Generation Error\n\nUnable to generate narrative."
-    
-    def generate_comprehensive_report(self):
-        """
-        Orchestrate the entire analysis workflow.
-        """
-        try:
-            (self.load_data()
-                .advanced_preprocessing()
-                .feature_importance()
-                .generate_visualizations())
-            
-            narrative_context = self.generate_narrative_prompt()
-            narrative = self.generate_llm_narrative(narrative_context)
-            
-            # Combine narrative with visualizations
-            full_report = f"""# Data Analysis Report
+        }]
 
-{narrative}
+        prompt = f'''Generate a comprehensive README.md for the dataset. 
+                     Include dataset purpose, key findings, insights, and recommendations.
+                     Reference visualizations: {image_filenames}'''
 
-## Visualizations
+        request_payload = {
+            "model": DataAnalysisConfig.LANGUAGE_MODEL,
+            "functions": readme_function,
+            "function_call": {"name": "generate_readme"},
+            "messages": [{"role": "user", "content": prompt}] +
+                        [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": image}}]} for image in encoded_images]
+        }
 
-### Correlation Heatmap
-![Correlation Heatmap](correlation_heatmap.png)
-
-### Principal Component Analysis
-![PCA Visualization](pca_visualization.png)
-"""
-            
-            report_path = os.path.join(self.output_dir, 'comprehensive_report.md')
-            with open(report_path, 'w') as f:
-                f.write(full_report)
-            
-            self.logger.info(f"Comprehensive report generated at {report_path}")
-        
-        except Exception as e:
-            self.logger.error(f"Comprehensive report generation failed: {e}")
+        response = requests.post(
+            DataAnalysisConfig.API_ENDPOINT, 
+            headers=DataAnalysisConfig.REQUEST_HEADERS, 
+            json=request_payload
+        )
+        result = response.json()
+        return json.loads(result["choices"][0]["message"]["function_call"]["arguments"])['text']
 
 def main():
-    """
-    Main script execution point with robust error handling.
-    """
-    if len(sys.argv) < 2:
-        print("Usage: python script.py <dataset.csv>")
+    """Main execution function for the data analysis script."""
+    if len(sys.argv) != 2:
+        print("Usage: python data_analyzer.py <input_filename.csv>")
         sys.exit(1)
-    
-    load_dotenv()  # Load environment variables
-    
+
+    input_file = sys.argv[1]
+    if not os.path.exists(input_file):
+        print("Error: File not found in the current working directory.")
+        sys.exit(1)
+
+    # Create output directory
+    output_directory = os.path.splitext(os.path.basename(input_file))[0]
+    os.makedirs(output_directory, exist_ok=True)
+
     try:
-        api_key = os.environ["AIPROXY_TOKEN"]
-        dataset_path = sys.argv[1]
-        
-        analyzer = AdvancedDataAnalyzer(dataset_path, api_key)
-        analyzer.generate_comprehensive_report()
-    
-    except KeyError:
-        print("Error: AIPROXY_TOKEN environment variable not set.")
+        # Load dataset
+        dataframe = pd.read_csv(input_file, encoding='ISO-8859-1')
+
+        # Generate dataset summary
+        dataset_summary = DataAnalyzer.generate_dataset_summary(dataframe)
+
+        # Request column analysis
+        selected_columns = DataAnalyzer.request_column_analysis(dataset_summary)
+
+        # Create visualizations
+        DataAnalyzer.create_visualizations(dataframe, selected_columns, output_directory)
+
+        # Resize generated images
+        for image_filename in os.listdir(output_directory):
+            if image_filename.endswith('.png'):
+                image_path = os.path.join(output_directory, image_filename)
+                img = Image.open(image_path)
+                img_resized = img.resize((512, 512))
+                img_resized.save(image_path)
+
+        # Generate README
+        visualization_paths = [os.path.join(output_directory, f) for f in os.listdir(output_directory) if f.endswith('.png')]
+        readme_content = DataAnalyzer.generate_readme(dataset_summary, visualization_paths)
+
+        # Save README
+        with open(os.path.join(output_directory, "README.md"), "w") as readme_file:
+            readme_file.write(f"# Automated Analysis of {input_file}\n\n")
+            readme_file.write(readme_content)
+
+        print("Analysis completed successfully. README.md saved.")
+
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"An error occurred during analysis: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
