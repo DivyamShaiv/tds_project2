@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = [ "pandas","numpy","matplotlib","seaborn","requests","Pillow","tk","dotenv"]
+# dependencies = [ "pandas","numpy","matplotlib","seaborn","requests","Pillow","tk","python-dotenv"]
 # ///
 
 import os
