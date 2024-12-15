@@ -1,57 +1,40 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["numpy", "pandas", "scikit-learn", "chardet", "requests", "seaborn", "matplotlib", "python-dotenv"]
+# dependencies = ["numpy", "pandas", "scikit-learn", "chardet", "requests", "seaborn", "matplotlib", "python-dotenv","openai","networkx","pyarrow"]
 # ///
 
 import os
 import sys
 import logging
-import subprocess
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, Optional
 
-# Automated dependency management
-REQUIRED_PACKAGES = [
-    "numpy", "pandas", "scikit-learn", "chardet", 
-    "requests", "seaborn", "matplotlib", "python-dotenv",
-    "openai", "PIL"
-]
+try:
+    import numpy as np
+    import pandas as pd
+    import chardet
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.decomposition import PCA
+    from sklearn.cluster import DBSCAN
+    from sklearn.impute import SimpleImputer
+    from sklearn.pipeline import Pipeline
+    from sklearn.compose import ColumnTransformer
+    from dotenv import load_dotenv
 
-def install_dependencies(packages):
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import networkx as nx
+
+    from openai import OpenAI
+except ImportError as e:
+    print(f"Missing dependency: {e}")
+    print("Please install required packages using:")
+    print("pip install numpy pandas scikit-learn chardet python-dotenv "
+          "matplotlib seaborn networkx openai pyarrow")
+    sys.exit(1)
+
+class EfficientDataAnalyzer:
     """
-    Safely install required Python packages.
-    
-    Args:
-        packages (List[str]): List of package names to install
-    """
-    for package in packages:
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-        except subprocess.CalledProcessError as e:
-            logging.error(f"Failed to install '{package}'. Error: {e}")
-
-# Install dependencies before importing
-install_dependencies(REQUIRED_PACKAGES)
-
-import pandas as pd
-import numpy as np
-import chardet
-import requests
-import seaborn as sns
-import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans, DBSCAN
-from sklearn.impute import SimpleImputer
-from sklearn.feature_selection import mutual_info_classif
-from dotenv import load_dotenv
-from openai import OpenAI
-from PIL import Image
-import base64
-import io
-
-class AdvancedDataAnalysisAgent:
-    """
-    A multi-modal, agentic data analysis framework with comprehensive capabilities.
+    Efficient, streamlined data analysis framework with optimized processing.
     """
     
     def __init__(self, 
@@ -59,155 +42,103 @@ class AdvancedDataAnalysisAgent:
                  api_key: str, 
                  log_level: int = logging.INFO):
         """
-        Initialize the advanced data analysis agent.
-        
-        Args:
-            dataset_path (str): Path to the input dataset
-            api_key (str): API key for LLM and vision services
-            log_level (int): Logging verbosity level
+        Initialize the data analysis agent with efficient configuration.
         """
         self.dataset_path = dataset_path
         self.api_key = api_key
-        self.df = None
-        self.analysis_results = {}
-        self.vision_client = OpenAI(api_key=api_key)
+        self.client = OpenAI(api_key=api_key)
         
-        # Advanced logging configuration
+        # Optimized logging
         logging.basicConfig(
-            level=log_level,
-            format='%(asctime)s | %(levelname)8s | %(message)s',
-            handlers=[
-                logging.StreamHandler(sys.stdout),
-                logging.FileHandler('data_analysis.log')
-            ]
+            level=log_level, 
+            format='%(asctime)s | %(levelname)s: %(message)s',
+            handlers=[logging.StreamHandler(), logging.FileHandler('analysis.log')]
         )
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = logging.getLogger(__name__)
         
-        # Output management
-        self.output_dir = self._create_output_directory()
+        # Efficient output management
+        self.output_dir = self._setup_output_directory()
+        self.df = None
     
-    def _create_output_directory(self) -> str:
+    def _setup_output_directory(self) -> str:
         """
-        Create a structured output directory for analysis artifacts.
-        
-        Returns:
-            str: Path to the created output directory
+        Create output directory with minimal overhead.
         """
         base_name = os.path.splitext(os.path.basename(self.dataset_path))[0]
         output_path = os.path.join('analysis_outputs', base_name)
         os.makedirs(output_path, exist_ok=True)
         return output_path
     
-    def load_and_validate_data(self) -> pd.DataFrame:
+    def load_data(self) -> 'EfficientDataAnalyzer':
         """
-        Robustly load data with advanced validation.
-        
-        Returns:
-            pd.DataFrame: Processed and validated DataFrame
+        Efficiently load and detect encoding with minimal memory usage.
         """
         try:
-            # Encoding detection
+            # Optimized encoding detection
             with open(self.dataset_path, 'rb') as file:
-                raw_data = file.read()
+                raw_data = file.read(10000)  # Sample first 10KB for encoding
                 encoding = chardet.detect(raw_data)['encoding']
             
-            # Load with detected encoding
-            self.df = pd.read_csv(self.dataset_path, encoding=encoding)
+            # Load with memory-efficient parameters
+            self.df = pd.read_csv(
+                self.dataset_path, 
+                encoding=encoding, 
+                low_memory=True,  # Reduce memory usage
+                dtype_backend='pyarrow'  # Use PyArrow for efficient parsing
+            )
             
-            # Advanced data validation
-            self._validate_data()
-            
-            self.logger.info(f"Loaded dataset: {self.df.shape}")
-            return self.df
+            self._preprocess_data()
+            return self
         
         except Exception as e:
-            self.logger.error(f"Data loading error: {e}")
+            self.logger.error(f"Data loading failed: {e}")
             raise
     
-    def _validate_data(self):
+    def _preprocess_data(self):
         """
-        Perform comprehensive data validation.
+        Efficient, comprehensive data preprocessing pipeline.
         """
-        # Check for duplicates
-        duplicate_count = self.df.duplicated().sum()
-        if duplicate_count > 0:
-            self.logger.warning(f"Found {duplicate_count} duplicate rows")
-            self.df.drop_duplicates(inplace=True)
+        # Remove excessive missing data rows
+        self.df.dropna(thresh=len(self.df.columns) * 0.5, inplace=True)
         
-        # Check data types and convert if necessary
-        for col in self.df.columns:
-            if self.df[col].dtype == 'object':
-                try:
-                    self.df[col] = pd.to_numeric(self.df[col], errors='raise')
-                except ValueError:
-                    pass  # Keep as categorical if conversion fails
-        
-        # Remove rows with too many missing values
-        self.df.dropna(thresh=len(self.df.columns)*0.5, inplace=True)
-    
-    def agentic_preprocessing(self):
-        """
-        Multi-stage, adaptive preprocessing with dynamic strategy selection.
-        """
-        # Dynamic imputation strategy
+        # Identify column types efficiently
         numeric_cols = self.df.select_dtypes(include=['number']).columns
-        categorical_cols = self.df.select_dtypes(include=['object']).columns
         
-        # Adaptive imputation
-        for col in numeric_cols:
-            impute_strategy = 'median' if self.df[col].skew() > 1 else 'mean'
-            imputer = SimpleImputer(strategy=impute_strategy)
-            self.df[col] = imputer.fit_transform(self.df[[col]])
+        # Create preprocessing pipeline
+        numeric_transformer = Pipeline(steps=[
+            ('imputer', SimpleImputer(strategy='median')),
+            ('scaler', StandardScaler())
+        ])
         
-        # Scaling with dynamic method
-        scaler = StandardScaler() if len(numeric_cols) > 5 else MinMaxScaler()
-        self.df[numeric_cols] = scaler.fit_transform(self.df[numeric_cols])
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('num', numeric_transformer, numeric_cols)
+            ],
+            remainder='drop'  # Efficiently handle non-numeric columns
+        )
         
-        return self
+        # Fit transform in one step
+        self.df = pd.DataFrame(
+            preprocessor.fit_transform(self.df),
+            columns=preprocessor.get_feature_names_out()
+        )
     
-    def generate_advanced_visualizations(self):
+    def generate_visualizations(self) -> 'EfficientDataAnalyzer':
         """
-        Create multi-modal, context-rich visualizations.
+        Create optimized, informative visualizations.
         """
-        plt.style.use('seaborn-v0_8-whitegrid')
+        plt.style.use('seaborn')
         
-        # Correlation Network
-        plt.figure(figsize=(15, 12))
-        corr_matrix = self.df.corr()
-        
-        # Use networkx for correlation visualization
-        import networkx as nx
-        
-        G = nx.Graph()
-        for i in range(len(corr_matrix.columns)):
-            for j in range(i+1, len(corr_matrix.columns)):
-                correlation = corr_matrix.iloc[i, j]
-                if abs(correlation) > 0.5:
-                    G.add_edge(
-                        corr_matrix.columns[i], 
-                        corr_matrix.columns[j], 
-                        weight=abs(correlation)
-                    )
-        
-        pos = nx.spring_layout(G, k=0.5)
-        nx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=500)
-        nx.draw_networkx_edges(G, pos)
-        nx.draw_networkx_labels(G, pos)
-        plt.title('Feature Correlation Network', fontsize=16)
-        plt.axis('off')
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.output_dir, 'correlation_network.png'))
-        plt.close()
-        
-        # PCA Visualization with Clustering
+        # PCA for dimensionality reduction
         pca = PCA(n_components=2)
-        pca_result = pca.fit_transform(self.df.select_dtypes(include=['number']))
+        pca_result = pca.fit_transform(self.df)
         
-        # Use DBSCAN for dynamic clustering
+        # Efficient clustering
         clustering = DBSCAN(eps=0.5, min_samples=3)
         clusters = clustering.fit_predict(pca_result)
         
-        plt.figure(figsize=(12, 10))
+        # Visualization with reduced computational complexity
+        plt.figure(figsize=(10, 8))
         scatter = plt.scatter(
             pca_result[:, 0], 
             pca_result[:, 1], 
@@ -215,152 +146,77 @@ class AdvancedDataAnalysisAgent:
             cmap='viridis', 
             alpha=0.7
         )
-        plt.title('PCA with Dynamic Clustering', fontsize=16)
-        plt.xlabel('First Principal Component')
-        plt.ylabel('Second Principal Component')
+        plt.title('Data Clustering via PCA', fontsize=15)
         plt.colorbar(scatter, label='Cluster')
         plt.tight_layout()
-        plt.savefig(os.path.join(self.output_dir, 'pca_clustering.png'))
+        plt.savefig(os.path.join(self.output_dir, 'pca_clustering.png'), dpi=150)
+        plt.close()
+        
+        # Correlation heatmap with efficient computation
+        plt.figure(figsize=(12, 10))
+        correlation_matrix = self.df.corr()
+        sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', linewidths=0.5)
+        plt.title('Feature Correlation Matrix', fontsize=15)
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.output_dir, 'correlation_heatmap.png'), dpi=150)
         plt.close()
         
         return self
     
-    def vision_analysis(self, image_path: str) -> Dict[str, Any]:
+    def generate_report(self) -> None:
         """
-        Perform vision-based analysis of an image.
-        
-        Args:
-            image_path (str): Path to the image file
-        
-        Returns:
-            Dict: Vision analysis results
+        Generate a concise, informative analysis report.
         """
         try:
-            with open(image_path, "rb") as image_file:
-                base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+            (self.load_data()
+                .generate_visualizations())
             
-            response = self.vision_client.chat.completions.create(
-                model="gpt-4-vision-preview",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Analyze the image from a data science perspective."
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{base64_image}"
-                                }
-                            },
-                            {
-                                "type": "text",
-                                "text": "Provide a detailed analysis of this visualization, highlighting key insights and potential implications."
-                            }
-                        ]
-                    }
-                ],
-                max_tokens=300
-            )
-            
-            return {
-                "vision_analysis": response.choices[0].message.content
-            }
-        
-        except Exception as e:
-            self.logger.error(f"Vision analysis failed: {e}")
-            return {"error": str(e)}
-    
-    def generate_dynamic_narrative(self) -> str:
-        """
-        Generate a dynamic, context-aware narrative.
-        
-        Returns:
-            str: Generated narrative in Markdown
-        """
-        try:
-            # Prepare narrative content
-            narrative = """# Dataset Narrative
+            # Create markdown report
+            report_content = f"""# Data Analysis Report
 
-## Overview
-Dataset contains {rows} rows and {columns} columns.
+## Dataset Overview
+- Total Rows: {self.df.shape[0]}
+- Total Columns: {self.df.shape[1]}
 
-### Numeric Columns
-{numeric_columns}
-
-### Summary Statistics
-{summary_statistics}
-""".format(
-                rows=self.df.shape[0],
-                columns=self.df.shape[1],
-                numeric_columns=", ".join(self.df.select_dtypes(include=['number']).columns),
-                summary_statistics=str(self.df.describe())
-            )
-            
-            return narrative
-        
-        except Exception as e:
-            self.logger.error(f"Dynamic narrative generation failed: {e}")
-            return "## Narrative Generation Error\n\nUnable to generate comprehensive narrative."
-    
-    def generate_comprehensive_report(self):
-        """
-        Orchestrate the entire advanced analysis workflow.
-        """
-        try:
-            (self.load_and_validate_data()
-                .agentic_preprocessing()
-                .generate_advanced_visualizations())
-            
-            # Generate dynamic narrative
-            narrative = self.generate_dynamic_narrative()
-            
-            # Combine narrative with visualizations
-            full_report = f"""# Advanced Data Analysis Report
-
-{narrative}
+## Statistical Summary
+{self.df.describe().to_markdown()}
 
 ## Visualizations
-
-### Correlation Network
-![Correlation Network](correlation_network.png)
-
-### PCA with Dynamic Clustering
 ![PCA Clustering](pca_clustering.png)
+![Correlation Heatmap](correlation_heatmap.png)
 """
             
-            report_path = os.path.join(self.output_dir, 'comprehensive_report.md')
+            report_path = os.path.join(self.output_dir, 'analysis_report.md')
             with open(report_path, 'w') as f:
-                f.write(full_report)
+                f.write(report_content)
             
-            self.logger.info(f"Comprehensive report generated at {report_path}")
+            self.logger.info(f"Report generated: {report_path}")
         
         except Exception as e:
-            self.logger.error(f"Comprehensive report generation failed: {e}")
+            self.logger.error(f"Report generation failed: {e}")
 
 def main():
     """
-    Main script execution point with robust error handling.
+    Efficient main execution with robust error handling.
     """
+    load_dotenv()
+    
     if len(sys.argv) < 2:
         print("Usage: python script.py <dataset.csv>")
         sys.exit(1)
     
-    load_dotenv()  # Load environment variables
-    
     try:
-        api_key = os.environ["AIPROXY_TOKEN"]
-        dataset_path = sys.argv[1]
+        api_key = os.getenv("AIPROXY_TOKEN")
+        if not api_key:
+            raise ValueError("API token not found")
         
-        analyzer = AdvancedDataAnalysisAgent(dataset_path, api_key)
-        analyzer.generate_comprehensive_report()
+        dataset_path = sys.argv[1]
+        analyzer = EfficientDataAnalyzer(dataset_path, api_key)
+        analyzer.generate_report()
     
-    except KeyError:
-        print("Error: AIPROXY_TOKEN environment variable not set.")
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"Analysis failed: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
