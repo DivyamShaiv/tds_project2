@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = [ "pandas","numpy","matplotlib","seaborn","requests","Pillow","tk"]
+# dependencies = [ "pandas","numpy","matplotlib","seaborn","requests","Pillow","tk","dotenv"]
 # ///
 
 import os
@@ -16,6 +16,7 @@ import matplotlib
 import seaborn as sns
 import matplotlib.pyplot as plt
 from PIL import Image
+from dotenv import load_dotenv
 
 # Suppress warnings globally
 warnings.filterwarnings("ignore")
@@ -23,15 +24,16 @@ matplotlib.use('Agg')
 
 class DataAnalysisConfig:
     """Configuration class for data analysis settings."""
-    API_TOKEN = os.getenv("DATA_ANALYSIS_TOKEN")
-    if API_TOKEN is None:
+    load_dotenv()
+    api_key = os.environ["AIPROXY_TOKEN"]
+    if api_key is None:
         print("Error: Authentication token is required.")
         sys.exit(1)
 
     API_ENDPOINT = "http://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
     REQUEST_HEADERS = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_TOKEN}"
+        "Authorization": f"Bearer {api_key}"
     }
     LANGUAGE_MODEL = "gpt-4o-mini"
 
@@ -310,22 +312,25 @@ class DataAnalyzer:
 
 def main():
     """Main execution function for the data analysis script."""
-    if len(sys.argv) != 2:
-        print("Usage: python data_analyzer.py <input_filename.csv>")
+    if len(sys.argv) < 2:
+        print("Usage: python script.py <dataset.csv>")
         sys.exit(1)
 
-    input_file = sys.argv[1]
-    if not os.path.exists(input_file):
-        print("Error: File not found in the current working directory.")
-        sys.exit(1)
+    dataset_file = sys.argv[1]
 
+    try:
+        load_dotenv()
+        api_key = os.environ["AIPROXY_TOKEN"]
+    except KeyError:
+        raise ValueError("AIPROXY_TOKEN environment variable not set.")
+    
     # Create output directory
-    output_directory = os.path.splitext(os.path.basename(input_file))[0]
+    output_directory = os.path.splitext(os.path.basename(dataset_file))[0]
     os.makedirs(output_directory, exist_ok=True)
 
     try:
         # Load dataset
-        dataframe = pd.read_csv(input_file, encoding='ISO-8859-1')
+        dataframe = pd.read_csv(dataset_file, encoding='ISO-8859-1')
 
         # Generate dataset summary
         dataset_summary = DataAnalyzer.generate_dataset_summary(dataframe)
@@ -350,10 +355,10 @@ def main():
 
         # Save README
         with open(os.path.join(output_directory, "README.md"), "w") as readme_file:
-            readme_file.write(f"# Automated Analysis of {input_file}\n\n")
+            readme_file.write(f"# Automated Analysis of {dataset_file}\n\n")
             readme_file.write(readme_content)
 
-        print("Analysis completed successfully. README.md saved.")
+        print("README.md saved. Analysis completed successfully.")
 
     except Exception as e:
         print(f"An error occurred during analysis: {e}")
