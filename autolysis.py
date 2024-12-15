@@ -43,7 +43,6 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.impute import SimpleImputer
-from sklearn.feature_selection import mutual_info_classif
 from dotenv import load_dotenv
 
 class AdvancedDataAnalyzer:
@@ -95,12 +94,12 @@ class AdvancedDataAnalyzer:
         os.makedirs(output_path, exist_ok=True)
         return output_path
     
-    def load_data(self) -> pd.DataFrame:
+    def load_data(self):
         """
         Robustly load data with encoding detection and preprocessing.
         
         Returns:
-            pd.DataFrame: Processed DataFrame
+            self: Returns the instance for method chaining
         """
         try:
             # Detect encoding
@@ -116,16 +115,60 @@ class AdvancedDataAnalyzer:
             self.df.reset_index(drop=True, inplace=True)
             
             self.logger.info(f"Loaded dataset: {self.df.shape}")
-            return self.df
+            return self
         
         except Exception as e:
             self.logger.error(f"Data loading error: {e}")
             raise
+
+
+    def read_data(self):
+        """
+        Read the CSV file with automatic encoding detection.
+        """
+        try:
+            with open(self.dataset_path, 'rb') as file:
+                result = chardet.detect(file.read())
+                encoding = result['encoding']
+
+            self.df = pd.read_csv(self.dataset_path, encoding=encoding)
+            if self.df is None or self.df.empty:
+                self.logger.error("Dataset is empty or could not be loaded.")
+                sys.exit("Dataset is empty or could not be loaded.")
+        except Exception as e:
+            self.logger.error(f"Error loading dataset: {e}")
+            sys.exit(1)
+
+    def extract_headers(self):
+        """
+        Extract headers from the dataset and save as JSON.
+        """
+        try:
+            if self.df is None:
+                raise ValueError("Data not loaded. Call read_data() first.")
+            
+            # Save headers to JSON
+            self.headers_json = self.df.columns.tolist()
+            headers_path = os.path.join(self.output_dir, "headers.json")
+            
+            with open(headers_path, "w") as f:
+                json.dump(self.headers_json, f, indent=2)
+            
+            self.logger.info(f"Headers saved to {headers_path}")
+        except Exception as e:
+            self.logger.error(f"Error extracting headers: {e}")
     
     def advanced_preprocessing(self):
         """
         Advanced data preprocessing with multiple techniques.
+        
+        Returns:
+            self: Returns the instance for method chaining
         """
+        # Ensure data is loaded
+        if self.df is None:
+            raise ValueError("Data must be loaded first. Call load_data() before preprocessing.")
+        
         # Imputation strategies
         numeric_cols = self.df.select_dtypes(include=['number']).columns
         categorical_cols = self.df.select_dtypes(include=['object']).columns
@@ -142,71 +185,158 @@ class AdvancedDataAnalyzer:
     
     def feature_importance(self):
         """
-        Calculate feature importance using mutual information.
+        Calculate feature importance using alternative methods for continuous data.
         
         Returns:
-            Dict: Feature importance scores
+            self: Returns the instance for method chaining
         """
         numeric_cols = self.df.select_dtypes(include=['number']).columns
         
-        # Placeholder for target - in real-world, this would be specified
-        target_proxy = self.df[numeric_cols].mean(axis=1)
+        try:
+            # Option 1: Use correlation-based feature importance
+            correlations = self.df[numeric_cols].corr().abs().mean()
+            importance_dict = correlations.to_dict()
+            
+            # Option 2: Use variance as a simple importance metric
+            variances = self.df[numeric_cols].var()
+            
+            # Combine methods for a more robust importance score
+            combined_importance = {}
+            for col in numeric_cols:
+                combined_importance[col] = (
+                    importance_dict.get(col, 0) * 0.7 +  # Correlation weight
+                    variances.get(col, 0) * 0.3  # Variance weight
+                )
+            
+            # Normalize to 0-1 range
+            max_importance = max(combined_importance.values())
+            normalized_importance = {
+                k: v / max_importance for k, v in combined_importance.items()
+            }
+            
+            self.analysis_results['feature_importances'] = normalized_importance
+            
+            # Log feature importances
+            self.logger.info("Feature Importances:")
+            for feature, importance in sorted(normalized_importance.items(), key=lambda x: x[1], reverse=True):
+                self.logger.info(f"{feature}: {importance:.4f}")
+            
+            return self
         
-        importances = mutual_info_classif(
-            self.df[numeric_cols], 
-            target_proxy
-        )
-        
-        importance_dict = dict(zip(numeric_cols, importances))
-        self.analysis_results['feature_importances'] = importance_dict
-        
-        return importance_dict
+        except Exception as e:
+            self.logger.error(f"Feature importance calculation failed: {e}")
+            return self
     
-    def generate_visualizations(self):
+    def construct_scatterplot(self):
         """
-        Create a comprehensive set of visualizations with advanced styling.
+        Generate a scatter plot of two numeric columns.
         """
-        plt.style.use('seaborn')
-        
-        # Correlation Heatmap
-        plt.figure(figsize=(12, 10))
-        corr_matrix = self.df.corr()
-        sns.heatmap(
-            corr_matrix, 
-            annot=True, 
-            cmap='coolwarm', 
-            linewidths=0.5,
-            fmt=".2f",
-            square=True,
-            cbar_kws={"shrink": .8}
-        )
-        plt.title('Feature Correlation Matrix', fontsize=15)
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.output_dir, 'correlation_heatmap.png'))
-        plt.close()
-        
-        # PCA Visualization
-        pca = PCA(n_components=2)
-        pca_result = pca.fit_transform(self.df.select_dtypes(include=['number']))
-        
-        plt.figure(figsize=(10, 8))
-        plt.scatter(
-            pca_result[:, 0], 
-            pca_result[:, 1], 
-            alpha=0.7,
-            c=pca_result[:, 0],  # Color by first principal component
-            cmap='viridis'
-        )
-        plt.title('PCA Visualization', fontsize=15)
-        plt.xlabel('First Principal Component')
-        plt.ylabel('Second Principal Component')
-        plt.colorbar(label='PC1 Value')
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.output_dir, 'pca_visualization.png'))
-        plt.close()
-        
-        return self
-    
+        try:
+            if self.df is None:
+                raise ValueError("Data not loaded. Call read_data() first.")
+            
+            # Select two numeric columns
+            numeric_cols = self.df.select_dtypes(include=['float64', 'int64']).columns
+            
+            if len(numeric_cols) < 2:
+                self.logger.warning("Not enough numeric columns for scatter plot.")
+                return
+            
+            plt.figure(figsize=(10, 6))
+            plt.scatter(self.df[numeric_cols[0]], self.df[numeric_cols[1]], alpha=0.7)
+            plt.title(f"Scatter Plot: {numeric_cols[0]} vs {numeric_cols[1]}")
+            plt.xlabel(numeric_cols[0])
+            plt.ylabel(numeric_cols[1])
+            
+            scatter_path = os.path.join(self.output_dir, "scatter_plot.png")
+            plt.savefig(scatter_path)
+            plt.close()
+            
+            self.logger.info(f"Scatter plot saved to {scatter_path}")
+        except Exception as e:
+            self.logger.error(f"Error generating scatter plot: {e}")
+
+    def generate_correlation_heatmap(self):
+        """
+        Generate a correlation heatmap for numeric columns.
+        """
+        try:
+            if self.df is None:
+                raise ValueError("Data not loaded. Call read_data() first.")
+            
+            # Select numeric columns
+            numeric_df = self.df.select_dtypes(include=['float64', 'int64'])
+            
+            if numeric_df.empty:
+                self.logger.warning("No numeric columns found for correlation heatmap.")
+                return
+            
+            # Compute correlation matrix
+            corr_matrix = numeric_df.corr()
+            
+            plt.figure(figsize=(12, 10))
+            sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0)
+            plt.title("Correlation Heatmap")
+            
+            heatmap_path = os.path.join(self.output_dir, "correlation_heatmap.png")
+            plt.savefig(heatmap_path)
+            plt.close()
+            
+            self.logger.info(f"Correlation heatmap saved to {heatmap_path}")
+        except Exception as e:
+            self.logger.error(f"Error generating correlation heatmap: {e}")
+
+    def generate_cluster_plot(self):
+        """
+        Perform K-means clustering and visualize results.
+        """
+        try:
+            if self.df is None:
+                raise ValueError("Data not loaded. Call read_data() first.")
+            
+            # Select numeric columns
+            numeric_df = self.df.select_dtypes(include=['float64', 'int64'])
+            
+            if numeric_df.empty or numeric_df.shape[1] < 2:
+                self.logger.warning("Not enough numeric columns for clustering.")
+                return
+            
+            # Prepare data for clustering
+            scaler = StandardScaler()
+            imputer = SimpleImputer(strategy='mean')
+            
+            # Impute missing values
+            numeric_data = imputer.fit_transform(numeric_df)
+            scaled_data = scaler.fit_transform(numeric_data)
+            
+            # Perform K-means clustering
+            kmeans = KMeans(n_clusters=3, random_state=42)
+            clusters = kmeans.fit_predict(scaled_data)
+            
+            # Plot clusters
+            plt.figure(figsize=(10, 6))
+            
+            # Use first two columns for visualization
+            scatter = plt.scatter(
+                scaled_data[:, 0], 
+                scaled_data[:, 1], 
+                c=clusters, 
+                cmap='viridis'
+            )
+            
+            plt.title("K-means Clustering")
+            plt.xlabel(numeric_df.columns[0])
+            plt.ylabel(numeric_df.columns[1])
+            plt.colorbar(scatter, label='Cluster')
+            
+            cluster_path = os.path.join(self.output_dir, "cluster_plot.png")
+            plt.savefig(cluster_path)
+            plt.close()
+            
+            self.logger.info(f"Clustering plot saved to {cluster_path}")
+        except Exception as e:
+            self.logger.error(f"Error generating cluster plot: {e}")
+
     def generate_narrative_prompt(self) -> Dict[str, Any]:
         """
         Create a structured, context-rich prompt for narrative generation.
@@ -237,110 +367,87 @@ class AdvancedDataAnalyzer:
         
         return narrative_context
     
-    def generate_llm_narrative(self, context: Dict[str, Any]) -> str:
+    def generate_llm_narrative(self, prompt: Dict[str, Any]) -> Optional[str]:
         """
-        Generate a narrative using an LLM with efficient token usage.
+        Generate narrative using an advanced LLM based on the prompt context.
         
         Args:
-            context (Dict): Prepared data context
-        
+            prompt (Dict): Structured context for narrative generation
+            
         Returns:
-            str: Generated narrative in Markdown
+            Optional[str]: Generated narrative, or None if unsuccessful
         """
         try:
-            endpoint = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
-            }
-            
+            # LLM API Integration
+            llm_url = "https://api.example-llm.com/v1/generate"
+            headers = {"Authorization": f"Bearer {self.api_key}"}
             payload = {
-                "model": "gpt-4o-mini",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": """You are a data storyteller. Create a compelling, 
-                        structured narrative that:
-                        1. Introduces the dataset's context
-                        2. Highlights key statistical insights
-                        3. Explains significant patterns and correlations
-                        4. Provides actionable recommendations
-                        5. Uses clear, engaging Markdown formatting"""
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(context, indent=2)
-                    }
-                ],
-                "max_tokens": 1000  # Efficient token management
+                "model": "text-davinci-003",
+                "prompt": json.dumps(prompt),
+                "max_tokens": 500
             }
             
-            response = requests.post(endpoint, headers=headers, json=payload)
-            response.raise_for_status()
+            response = requests.post(llm_url, headers=headers, json=payload)
             
-            return response.json()['choices'][0]['message']['content']
+            if response.status_code == 200:
+                narrative = response.json().get('choices', [{}])[0].get('text', '').strip()
+                self.analysis_results['narrative'] = narrative
+                return narrative
+            else:
+                self.logger.error(f"LLM API error: {response.status_code} - {response.text}")
+                return None
         
         except Exception as e:
-            self.logger.error(f"Narrative generation failed: {e}")
-            return "## Data Story Generation Error\n\nUnable to generate narrative."
+            self.logger.error(f"Failed to generate narrative: {e}")
+            return None
     
-    def generate_comprehensive_report(self):
+    def save_analysis_results(self):
         """
-        Orchestrate the entire analysis workflow.
+        Save all analysis results, visualizations, and narratives to output directory.
         """
         try:
-            (self.load_data()
-                .advanced_preprocessing()
-                .feature_importance()
-                .generate_visualizations())
+            # Save results to a JSON file
+            results_path = os.path.join(self.output_dir, 'analysis_results.json')
+            with open(results_path, 'w') as file:
+                json.dump(self.analysis_results, file, indent=4)
             
-            narrative_context = self.generate_narrative_prompt()
-            narrative = self.generate_llm_narrative(narrative_context)
-            
-            # Combine narrative with visualizations
-            full_report = f"""# Data Analysis Report
-
-{narrative}
-
-## Visualizations
-
-### Correlation Heatmap
-![Correlation Heatmap](correlation_heatmap.png)
-
-### Principal Component Analysis
-![PCA Visualization](pca_visualization.png)
-"""
-            
-            report_path = os.path.join(self.output_dir, 'comprehensive_report.md')
-            with open(report_path, 'w') as f:
-                f.write(full_report)
-            
-            self.logger.info(f"Comprehensive report generated at {report_path}")
+            self.logger.info(f"Analysis results saved to {results_path}")
         
         except Exception as e:
-            self.logger.error(f"Comprehensive report generation failed: {e}")
+            self.logger.error(f"Failed to save analysis results: {e}")
+            raise
 
-def main():
-    """
-    Main script execution point with robust error handling.
-    """
+# Example usage
+if __name__ == "__main__":
+    #load_dotenv()  # Load environment variables from a .env file
+
     if len(sys.argv) < 2:
         print("Usage: python script.py <dataset.csv>")
         sys.exit(1)
-    
-    load_dotenv()  # Load environment variables
-    
-    try:
-        api_key = os.environ["AIPROXY_TOKEN"]
-        dataset_path = sys.argv[1]
-        
-        analyzer = AdvancedDataAnalyzer(dataset_path, api_key)
-        analyzer.generate_comprehensive_report()
-    
-    except KeyError:
-        print("Error: AIPROXY_TOKEN environment variable not set.")
-    except Exception as e:
-        print(f"Unexpected error: {e}")
 
-if __name__ == "__main__":
-    main()
+    dataset_file = sys.argv[1]
+
+    try:
+        load_dotenv()
+        api_key = os.environ["AIPROXY_TOKEN"]
+    except KeyError:
+        raise ValueError("AIPROXY_TOKEN environment variable not set.")
+
+
+    #api_key = os.getenv("API_KEY")
+    #dataset_path = "path/to/your/dataset.csv"
+    
+    analyzer = AdvancedDataAnalyzer(dataset_path=dataset_file, api_key=api_key)
+    analyzer.load_data().advanced_preprocessing().feature_importance().read_data()
+    analyzer.construct_scatterplot()
+    analyzer.generate_correlation_heatmap()
+    analyzer.generate_cluster_plot()
+    
+    prompt = analyzer.generate_narrative_prompt()
+    narrative = analyzer.generate_llm_narrative(prompt)
+    
+    if narrative:
+        analyzer.logger.info(f"Narrative: {narrative}")
+    
+    analyzer.save_analysis_results()
+
